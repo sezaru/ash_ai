@@ -515,7 +515,7 @@ if Code.ensure_loaded?(Igniter) do
             |> Ash.Query.limit(10)
             |> Ash.Query.select([:text, :source])
             |> Ash.Query.sort(inserted_at: :asc)
-            |> Ash.read!()
+            |> Ash.read!(scope: context)
 
           prompt_messages =
             [
@@ -772,7 +772,7 @@ if Code.ensure_loaded?(Igniter) do
             |> Ash.Query.filter(id != ^message.id)
             |> Ash.Query.select([:text, :source, :tool_calls, :tool_results])
             |> Ash.Query.sort(inserted_at: :asc)
-            |> Ash.read!()
+            |> Ash.read!(scope: context)
             |> Enum.concat([%{source: :user, text: message.text}])
 
           prompt_messages =
