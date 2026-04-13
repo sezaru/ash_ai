@@ -11,6 +11,15 @@ See [Conventional Commits](Https://conventionalcommits.org) for commit guideline
 
 <!-- changelog -->
 
+## [v0.6.1](https://github.com/ash-project/ash_ai/compare/v0.6.0...v0.6.1) (2026-04-13)
+
+
+
+
+### Bug Fixes:
+
+* use context in Ash reads in AshAI.Gen.Chat by [@zachdaniel](https://github.com/zachdaniel)
+
 ## [v0.6.0](https://github.com/ash-project/ash_ai/compare/v0.5.0...v0.6.0) (2026-04-09)
 
 
