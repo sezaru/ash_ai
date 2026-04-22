@@ -16,7 +16,11 @@ defmodule AshAi do
   use Spark.Dsl.Extension,
     sections: AshAi.Dsl.sections(),
     imports: [AshAi.Actions],
-    transformers: [AshAi.Transformers.Vectorize, AshAi.Transformers.McpApps],
+    transformers: [
+      AshAi.Transformers.Vectorize,
+      AshAi.Transformers.ResourceTools,
+      AshAi.Transformers.McpApps
+    ],
     verifiers: [AshAi.Verifiers.McpResourceActionsReturnString]
 
   defmodule Tool do
@@ -690,32 +694,19 @@ defmodule AshAi do
       if opts.actions do
         Enum.flat_map(opts.actions, fn
           {resource, actions} ->
-            domain = Ash.Resource.Info.domain(resource)
-
-            if !domain do
-              raise "Cannot use an ash resource that does not have a domain"
-            end
-
-            tools = AshAi.Info.tools(domain)
+            tools = tools_for_resource(resource)
 
             if !Enum.any?(tools, fn tool ->
-                 tool.resource == resource && (actions == :* || tool.action in actions)
+                 actions == :* || tool.action.name in actions
                end) do
               raise "Cannot use an action that is not exposed as a tool"
             end
 
             if actions == :* do
               tools
-              |> Enum.filter(&(&1.resource == resource))
-              |> Enum.map(fn tool ->
-                %{tool | domain: domain, action: Ash.Resource.Info.action(resource, tool.action)}
-              end)
             else
               tools
-              |> Enum.filter(&(&1.resource == resource && &1.action in actions))
-              |> Enum.map(fn tool ->
-                %{tool | domain: domain, action: Ash.Resource.Info.action(resource, tool.action)}
-              end)
+              |> Enum.filter(&(&1.action.name in actions))
             end
         end)
       else
@@ -724,8 +715,8 @@ defmodule AshAi do
         end
 
         for domain <- Application.get_env(opts.otp_app, :ash_domains) || [],
-            tool <- AshAi.Info.tools(domain) do
-          %{tool | domain: domain, action: Ash.Resource.Info.action(tool.resource, tool.action)}
+            tool <- tools_for_domain(domain) do
+          tool
         end
       end
     end
@@ -755,6 +746,63 @@ defmodule AshAi do
         opts.tenant
       )
     )
+  end
+
+  defp tools_for_domain(domain) do
+    domain_tools = attach_tool_runtime_details(AshAi.Info.tools(domain), domain)
+
+    resource_tools =
+      domain
+      |> Ash.Domain.Info.resources()
+      |> Enum.flat_map(fn resource ->
+        resource
+        |> AshAi.Info.tools()
+        |> attach_tool_runtime_details(domain)
+      end)
+
+    ensure_unique_tool_names!(domain_tools ++ resource_tools, domain)
+  end
+
+  defp tools_for_resource(resource) do
+    domain = Ash.Resource.Info.domain(resource)
+
+    if !domain do
+      raise "Cannot use an ash resource that does not have a domain"
+    end
+
+    domain
+    |> tools_for_domain()
+    |> Enum.filter(&(&1.resource == resource))
+  end
+
+  defp attach_tool_runtime_details(tools, domain) do
+    Enum.map(tools, fn tool ->
+      %{tool | domain: domain, action: Ash.Resource.Info.action(tool.resource, tool.action)}
+    end)
+  end
+
+  defp ensure_unique_tool_names!(tools, domain) do
+    duplicates =
+      tools
+      |> Enum.map(& &1.name)
+      |> Enum.frequencies()
+      |> Enum.filter(fn {_name, count} -> count > 1 end)
+      |> Enum.map(fn {name, _count} -> name end)
+      |> Enum.sort()
+
+    case duplicates do
+      [] ->
+        tools
+
+      names ->
+        raise ArgumentError, """
+        Duplicate tool names found in #{inspect(domain)}: #{Enum.join(names, ", ")}.
+
+        Tool names must be unique per domain across both:
+        - domain-level `tools do ... end`
+        - resource-level `tools do ... end`
+        """
+    end
   end
 
   def has_vectorize_change?(%Ash.Changeset{} = changeset) do
